@@ -236,8 +236,8 @@ static void CG_DrawField (int x, int y, int width, int value) {
 		else
 			frame = *ptr -'0';
 
-		CG_DrawPic( x,y, CHAR_WIDTH, CHAR_HEIGHT, cgs.media.numberShaders[frame] );
-		x += CHAR_WIDTH;
+		CG_DrawPic( x ,y, CHAR_WIDTH, CHAR_HEIGHT, cgs.media.numberShaders[frame] );
+		x += CHAR_WIDTH + 1;
 		ptr++;
 		l--;
 	}
@@ -378,7 +378,7 @@ void CG_DrawHead( float x, float y, float w, float h, int clientNum, vec3_t head
 		CG_Draw3DModelColor( x, y, w, h, ci->headModel, ci->headSkin, origin, headAngles, ci->headColor );
 	} else if ( cg_drawIcons.integer ) {
 		trap_R_SetColor ( NULL );
-		CG_DrawPic( x, y, w, h, ci->modelIcon );
+		CG_DrawPic( x + 6, y + 6, w, h, ci->modelIcon );
 	}
 
 	// if they are deferred, draw a cross out
@@ -504,7 +504,7 @@ static void CG_DrawStatusBarHead( float x ) {
 	angles[YAW] = cg.headStartYaw + ( cg.headEndYaw - cg.headStartYaw ) * frac;
 	angles[PITCH] = cg.headStartPitch + ( cg.headEndPitch - cg.headStartPitch ) * frac;
 
-	CG_DrawHead( x, cgs.screenYmax + 1 - size, size, size, cg.snap->ps.clientNum, angles );
+	CG_DrawHead( x - 8, cgs.screenYmax - 1 - size/2 - STATUSBAR_HEIGHT/2, size, size, cg.snap->ps.clientNum, angles );
 }
 #endif // MISSIONPACK
 
@@ -517,7 +517,7 @@ CG_DrawStatusBarFlag
 */
 #ifndef MISSIONPACK
 static void CG_DrawStatusBarFlag( float x, int team ) {
-	CG_DrawFlagModel( x, cgs.screenYmax + 1 - ICON_SIZE, ICON_SIZE, ICON_SIZE, team, qfalse );
+	CG_DrawFlagModel( x - 6, cgs.screenYmax - ICON_SIZE/2 - STATUSBAR_HEIGHT/2, ICON_SIZE, ICON_SIZE, team, qfalse );
 }
 #endif // MISSIONPACK
 
@@ -557,7 +557,6 @@ CG_DrawStatusBar
 ================
 */
 #ifndef MISSIONPACK
-#define STATUSBAR_HEIGHT 60
 static void CG_DrawStatusBar( void ) {
 	int			color;
 	centity_t	*cent;
@@ -586,7 +585,7 @@ static void CG_DrawStatusBar( void ) {
 		cgs.screenXmax - cgs.screenXmin + 1, STATUSBAR_HEIGHT, 
 		0.33f, cg.snap->ps.persistant[ PERS_TEAM ] );
 
-	y = cgs.screenYmax + 1 - ICON_SIZE;
+	y = cgs.screenYmax + 1 - ICON_SIZE/2 - STATUSBAR_HEIGHT/2;
 
 	cent = &cg_entities[cg.snap->ps.clientNum];
 	ps = &cg.snap->ps;
@@ -603,8 +602,6 @@ static void CG_DrawStatusBar( void ) {
 					   cg_weapons[ cent->currentState.weapon ].ammoModel, 0, origin, angles );
 	}
 
-	CG_DrawStatusBarHead( 185 + CHAR_WIDTH*3 + TEXT_ICON_SPACE );
-
 	if( cg.predictedPlayerState.powerups[PW_REDFLAG] ) {
 		CG_DrawStatusBarFlag( 185 + CHAR_WIDTH*3 + TEXT_ICON_SPACE + ICON_SIZE, TEAM_RED );
 	} else if( cg.predictedPlayerState.powerups[PW_BLUEFLAG] ) {
@@ -612,6 +609,8 @@ static void CG_DrawStatusBar( void ) {
 	} else if( cg.predictedPlayerState.powerups[PW_NEUTRALFLAG] ) {
 		CG_DrawStatusBarFlag( 185 + CHAR_WIDTH*3 + TEXT_ICON_SPACE + ICON_SIZE, TEAM_FREE );
 	}
+
+	CG_DrawStatusBarHead( 185 + CHAR_WIDTH*3 + TEXT_ICON_SPACE );
 
 	if ( ps->stats[ STAT_ARMOR ] ) {
 		origin[0] = 90;
@@ -1437,7 +1436,7 @@ static int CG_DrawPickupItem( int y ) {
 		return y;
 	}
 
-	y -= PICKUP_ICON_SIZE;
+	y -= PICKUP_ICON_SIZE + 8;
 
 	value = cg.itemPickup;
 	if ( value ) {
@@ -1447,7 +1446,7 @@ static int CG_DrawPickupItem( int y ) {
 			trap_R_SetColor( fadeColor );
 			CG_DrawPic( cgs.screenXmin + 8, y, PICKUP_ICON_SIZE, PICKUP_ICON_SIZE, cg_items[ value ].icon );
 			if ( cg.itemPickupCount > 1 ) {
-				text = va( "%s x%i", bg_itemlist[ value ].pickup_name, cg.itemPickupCount );
+				text = va( "%s %ix", bg_itemlist[ value ].pickup_name, cg.itemPickupCount );
 			} else {
 				text = bg_itemlist[ value ].pickup_name;
 			}
