@@ -784,9 +784,20 @@ void CG_RegisterWeapon( int weaponNum ) {
 
 		// plasmagun dlight
 		weaponInfo->missileDlight = MISSILE_GLOW_RADIUS;
-		MAKERGB( weaponInfo->missileDlightColor, 0.2f, 0.2f, 1.0f );
 
-		MAKERGB( weaponInfo->flashDlightColor, 0.6f, 0.6f, 1.0f );
+		if ( cg_plasmaDlightColor.integer == 1) {
+		MAKERGB( weaponInfo->missileDlightColor, 0.5f, 0.0f, 0.6f ); 	//q3test plasma
+		} else {
+		MAKERGB( weaponInfo->missileDlightColor, 0.2f, 0.2f, 1.0f );	//vq3 plasma
+		}
+
+		if ( cg_plasmaDlightColor.integer == 1) {
+		MAKERGB( weaponInfo->flashDlightColor, 0.6f, 0.0f, 1.0f );	//q3ihv plasma
+		} else {
+		MAKERGB( weaponInfo->flashDlightColor, 0.6f, 0.6f, 1.0f );	//vq3 plasma
+		}
+
+
 		weaponInfo->flashSound[0] = trap_S_RegisterSound( "sound/weapons/plasma/hyprbf1a.wav", qfalse );
 		cgs.media.plasmaExplosionShader = trap_R_RegisterShader( "plasmaExplosion" );
 		cgs.media.railRingsShader = trap_R_RegisterShader( "railDisc" );
@@ -806,7 +817,13 @@ void CG_RegisterWeapon( int weaponNum ) {
 
 		// bfg dlight
 		weaponInfo->missileDlight = MISSILE_GLOW_RADIUS;
-		MAKERGB( weaponInfo->missileDlightColor, 0.2f, 1.0f, 0.2f );
+															  
+
+		if ( cg_bfgDlightColor.integer == 1) {
+		MAKERGB( weaponInfo->missileDlightColor, 0.0f, 0.3f, 1.0f ); //q3modern bfg
+		} else {
+		MAKERGB( weaponInfo->missileDlightColor, 0.2f, 1.0f, 0.2f ); //vq3 bfg
+		}
 
 		MAKERGB( weaponInfo->flashDlightColor, 1.0f, 0.7f, 1.0f );
 		weaponInfo->flashSound[0] = trap_S_RegisterSound( "sound/weapons/bfg/bfg_fire.wav", qfalse );
@@ -1969,9 +1986,17 @@ void CG_MissileHitWall( weapon_t weapon, int clientNum, vec3_t origin, vec3_t di
 		mark = cgs.media.burnMarkShader;
 		radius = 32;
 		light = BFG_EXPLOSION_RADIUS;
-		lightColor[0] = 0.2f;
-		lightColor[1] = 1.0f;
-		lightColor[2] = 0.2f;
+
+		if ( cg_bfgDlightColor.integer == 1) {
+			lightColor[0] = 0.0f;
+			lightColor[1] = 0.3f;	//q3modern bfg
+			lightColor[2] = 1.0f;
+		} else {
+			lightColor[0] = 0.2f;
+			lightColor[1] = 1.0f;	//vq3 bfg
+			lightColor[2] = 0.2f;
+		}
+
 		isSprite = qtrue;
 		break;
 	case WP_SHOTGUN:
