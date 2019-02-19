@@ -458,6 +458,58 @@ typedef struct {
 #define MAX_REWARDSTACK		10
 #define MAX_SOUNDBUFFER		20
 
+#define MAX_LENSFLARE_EFFECTS 200
+#define MAX_MISSILE_LENSFLARE_EFFECTS 16
+#define MAX_LENSFLARES_PER_EFFECT 32
+typedef enum {
+	LFM_reflexion,
+	LFM_glare,
+	LFM_star
+} lensFlareMode_t;
+typedef struct {
+	qhandle_t shader;
+	lensFlareMode_t mode;
+	float pos;	// position at light axis
+	float size;
+	float rgba[4];
+	float rotationOffset;
+	float rotationYawFactor;
+	float rotationPitchFactor;
+	float rotationRollFactor;
+	float fadeAngleFactor;		// for spotlights
+	float entityAngleFactor;	// for spotlights
+	float intensityThreshold;
+} lensFlare_t;
+typedef struct {
+	char name[64];
+	float range;
+	float rangeSqr;
+	float fadeAngle;	// for spotlights
+	int numLensFlares;
+	lensFlare_t lensFlares[MAX_LENSFLARES_PER_EFFECT];
+} lensFlareEffect_t;
+
+#define MAX_LIGHTS_PER_MAP 1024
+#define LIGHT_INTEGRATION_BUFFER_SIZE 8	// must be a power of 2
+typedef struct {
+	float light;
+	vec3_t origin;
+} lightSample_t;
+typedef struct {
+	vec3_t origin;
+	centity_t* lock;
+	float radius;
+	float lightRadius;
+	vec3_t dir;		// for spotlights
+	float angle;	// for spotlights, -1 = non-spotlight, -2 = sun
+	float maxVisAngle;
+	const lensFlareEffect_t* lfeff;
+	int libPos;
+	int libNumEntries;
+	lightSample_t lib[LIGHT_INTEGRATION_BUFFER_SIZE];	// lib = light integration buffer
+} lensFlareEntity_t;
+
+
 //======================================================================
 
 // all cg.stepTime, cg.duckTime, cg.landTime, etc are set to cg.time when the action
@@ -540,6 +592,11 @@ typedef struct {
 	// view rendering
 	refdef_t	refdef;
 	vec3_t		refdefViewAngles;		// will be converted to refdef.viewaxis
+
+	// variables for map lens flares
+	vec3_t		lastViewOrigin;
+	float		viewMovement;
+	int			numFramesWithoutViewMovement;
 
 	// zoom key
 	qboolean	zoomed;
@@ -787,6 +844,11 @@ typedef struct {
 	qhandle_t	nailPuffShader;
 	qhandle_t	blueProxMine;
 #endif
+	qhandle_t	bfgLFGlareShader;
+	qhandle_t	bfgLFDiscShader;
+	qhandle_t	bfgLFRingShader;
+	qhandle_t	bfgLFLineShader;
+	qhandle_t	bfgLFStarShader;
 
 	qhandle_t	numberShaders[11];
 
@@ -1067,6 +1129,12 @@ typedef struct {
 	char			redTeam[MAX_QPATH];
 	char			blueTeam[MAX_QPATH];
 
+	// serverinfo cvars
+	char			sunFlareEffect[128];
+	float			sunFlareYaw;
+	float			sunFlarePitch;
+	float			sunFlareDistance;
+
 	int				voteTime;
 	int				voteYes;
 	int				voteNo;
@@ -1124,6 +1192,18 @@ typedef struct {
 	int acceptLeader;
 	char acceptVoice[MAX_NAME_LENGTH];
 #endif
+
+	int numLensFlareEffects;
+	lensFlareEffect_t lensFlareEffects[MAX_LENSFLARE_EFFECTS];
+
+	int numLensFlareEntities;
+	lensFlareEntity_t sunFlare;
+	lensFlareEntity_t lensFlareEntities[MAX_LIGHTS_PER_MAP];
+
+	int numMissileLensFlareEffects;
+	lensFlareEffect_t missileLensFlareEffects[MAX_MISSILE_LENSFLARE_EFFECTS];
+	const lensFlareEffect_t* lensFlareEffectBFG;
+	const lensFlareEffect_t* lensFlareEffectRocketLauncher;
 
 	// media
 	cgMedia_t		media;
@@ -1248,6 +1328,9 @@ extern	vmCvar_t		cg_oldRail;
 extern	vmCvar_t		cg_oldRocket;
 extern	vmCvar_t		cg_oldPlasma;
 extern	vmCvar_t		cg_trueLightning;
+extern	vmCvar_t		cg_missileFlare;
+extern	vmCvar_t		cg_mapFlare;
+extern	vmCvar_t		cg_sunFlare;
 #ifdef MISSIONPACK
 extern	vmCvar_t		cg_redTeamName;
 extern	vmCvar_t		cg_blueTeamName;
@@ -1303,6 +1386,11 @@ score_t *CG_GetSelectedScore( void );
 #endif
 void CG_BuildSpectatorString( void );
 
+void CG_LFEntOrigin(const lensFlareEntity_t* lfent, vec3_t origin);
+void CG_LoadLensFlares(void);
+void CG_ComputeMaxVisAngle(lensFlareEntity_t* lfent);
+void CG_LoadLensFlareEntities(void);
+
 void CG_SetScoreCatcher( qboolean enable );
 
 //
@@ -1319,6 +1407,8 @@ void CG_ZoomUp_f( void );
 void CG_AddBufferedSound( sfxHandle_t sfx);
 
 void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demoPlayback );
+
+void CG_AddLensFlare(lensFlareEntity_t* lfent, int quality);
 
 
 //
@@ -1422,6 +1512,13 @@ void CG_BuildSolidList( void );
 int	CG_PointContents( const vec3_t point, int passEntityNum );
 void CG_Trace( trace_t *result, const vec3_t start, const vec3_t mins, const vec3_t maxs, const vec3_t end, 
 					 int skipNumber, int mask );
+
+void CG_SmoothTrace(
+	trace_t *result,
+	const vec3_t start, vec3_t mins, vec3_t maxs, const vec3_t end, 
+	int skipNumber, int mask
+);
+
 void CG_PredictPlayerState( void );
 void CG_LoadDeferredPlayers( void );
 

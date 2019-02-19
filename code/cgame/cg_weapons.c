@@ -813,6 +813,12 @@ void CG_RegisterWeapon( int weaponNum ) {
 		cgs.media.bfgExplosionShader = trap_R_RegisterShader( "bfgExplosion" );
 		weaponInfo->missileModel = trap_R_RegisterModel( "models/weaphits/bfg.md3" );
 		weaponInfo->missileSound = trap_S_RegisterSound( "sound/weapons/rocket/rockfly.wav", qfalse );
+		cgs.media.bfgLFGlareShader = trap_R_RegisterShader("bfgLFGlare");
+		cgs.media.bfgLFDiscShader = trap_R_RegisterShader("bfgLFDisc");
+		cgs.media.bfgLFRingShader = trap_R_RegisterShader("bfgLFRing");
+		cgs.media.bfgLFStarShader = trap_R_RegisterShader("bfgLFStar");
+		cgs.media.bfgLFLineShader = trap_R_RegisterShader("bfgLFLine");
+		weaponInfo->missileDlight = 400;
 		break;
 
 	 default:

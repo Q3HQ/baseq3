@@ -399,6 +399,42 @@ static void CG_Item( centity_t *cent ) {
 
 /*
 ===============
+CG_AddMissileLensFlare
+===============
+*/
+static void CG_AddMissileLensFlare(centity_t* cent) {
+	lensFlareEntity_t lfent;
+
+	if (!cg_missileFlare.integer) return;
+
+	switch (cent->currentState.weapon) {
+	case WP_ROCKET_LAUNCHER:
+		memset(&lfent, 0, sizeof(lfent));
+		lfent.lfeff = cgs.lensFlareEffectRocketLauncher;
+		lfent.angle = 90;
+		VectorNegate(cent->currentState.pos.trDelta, lfent.dir);
+		VectorNormalize(lfent.dir);
+		break;
+	case WP_BFG:
+		memset(&lfent, 0, sizeof(lfent));
+		lfent.lfeff = cgs.lensFlareEffectBFG;
+		lfent.angle = -1;
+		break;
+	default:
+		return;
+	}
+
+	if (!lfent.lfeff) return;
+
+	VectorCopy(cent->lerpOrigin, lfent.origin);
+
+	CG_ComputeMaxVisAngle(&lfent);
+
+	CG_AddLensFlare(&lfent, 1);
+}
+
+/*
+===============
 CG_Missile
 ===============
 */
@@ -466,6 +502,29 @@ static void CG_Missile( centity_t *cent ) {
 		ent.rotation = 0;
 		ent.customShader = cgs.media.plasmaBallShader;
 		trap_R_AddRefEntityToScene( &ent );
+		return;
+	}
+
+	CG_AddMissileLensFlare(cent);
+
+	if (cent->currentState.weapon == WP_BFG) {
+		ent.reType = RT_SPRITE;
+		ent.radius = 30.0;
+		ent.rotation = 0;
+		ent.customShader = cgs.media.bfgLFGlareShader;
+		ent.shaderRGBA[0] = 255;
+		ent.shaderRGBA[1] = 255;
+		ent.shaderRGBA[2] = 255;
+		ent.shaderRGBA[3] = 255;
+		trap_R_AddRefEntityToScene(&ent);
+
+		ent.radius = 50.0;
+		ent.shaderRGBA[0] = 0;
+		ent.shaderRGBA[1] = 100;
+		ent.shaderRGBA[2] = 255;
+		ent.shaderRGBA[3] = 255;
+		trap_R_AddRefEntityToScene(&ent);
+
 		return;
 	}
 

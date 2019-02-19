@@ -780,6 +780,409 @@ static void CG_FirstFrame( void )
 		cgs.voteModified = qfalse;
 }
 
+/*
+===============
+CG_DrawMapLensFlare
+===============
+*/
+static void CG_DrawMapLensFlare(
+	const lensFlare_t* lf,
+	float distance,
+	vec3_t center, vec3_t dir, vec3_t angles,
+	float alpha, float visibleLight
+) {
+	refEntity_t ent;
+	float radius;
+
+	memset(&ent, 0, sizeof(ent));
+
+	radius = lf->size;
+
+	switch (lf->mode) {
+	case LFM_reflexion:
+		alpha *= 0.2 * lf->rgba[3];
+
+		radius *= cg.refdef.fov_x / 90;	// lens flares do not change size through zooming
+		//alpha /= radius;
+		break;
+	case LFM_glare:
+		alpha *= 0.14 * lf->rgba[3];
+		radius *= visibleLight * 1000000.0 / Square(distance);
+		break;
+	case LFM_star:
+		alpha *= lf->rgba[3];
+		radius *= visibleLight * 40000.0 / (distance * sqrt(distance) * sqrt(sqrt(sqrt(distance))));
+		break;
+	}
+
+	alpha *= visibleLight;
+	if (alpha > 255) alpha = 255;
+
+	ent.reType = RT_SPRITE;
+	ent.customShader = lf->shader;
+	ent.shaderRGBA[0] = lf->rgba[0];
+	ent.shaderRGBA[1] = lf->rgba[1];
+	ent.shaderRGBA[2] = lf->rgba[2];
+	ent.shaderRGBA[3] = alpha;
+	ent.radius = radius;
+
+	ent.rotation =
+		lf->rotationOffset +
+		lf->rotationYawFactor * angles[YAW] +
+		lf->rotationPitchFactor * angles[PITCH] +
+		lf->rotationRollFactor * angles[ROLL];
+
+	VectorMA(center, lf->pos, dir, ent.origin);
+	trap_R_AddRefEntityToScene(&ent);
+}
+
+
+/*
+=====================
+CG_IsLFVisible
+=====================
+*/
+static qboolean CG_IsLFVisible(const vec3_t origin, const vec3_t pos, float lfradius) {
+	trace_t trace;
+
+	CG_SmoothTrace(&trace, cg.refdef.vieworg, NULL, NULL, pos, cg.snap->ps.clientNum, MASK_OPAQUE|CONTENTS_BODY);
+	//return (1.0 - trace.fraction) * distance <= lfradius;
+	return Distance(trace.endpos, origin) <= lfradius;
+}
+
+/*
+=====================
+CG_ComputeVisibleLightSample
+=====================
+*/
+#define NUMVISSAMPLES 50
+static float CG_ComputeVisibleLightSample(
+	lensFlareEntity_t* lfent,
+	const vec3_t origin,		// redundant, but we have this already
+	float distance,				// ditto
+	vec3_t visOrigin,
+	int quality
+) {
+	vec3_t vx, vy;
+	int visCount;
+	int i;
+
+	if (lfent->lightRadius <= 1 || quality < 2) {
+		VectorCopy(origin, visOrigin);
+		return CG_IsLFVisible(origin, origin, lfent->radius);
+	}
+
+	visCount = 0;
+	for (i = 0; i < 8; i++) {
+		vec3_t corner;
+
+		VectorCopy(origin, corner);
+		corner[0] += i&1? lfent->lightRadius : -lfent->lightRadius;
+		corner[1] += i&2? lfent->lightRadius : -lfent->lightRadius;
+		corner[2] += i&4? lfent->lightRadius : -lfent->lightRadius;
+		if (!CG_IsLFVisible(origin, corner, 1.8 * lfent->radius)) continue;	// 1.8 = rough approx. of sqrt(3)
+		visCount++;
+	}
+	if (visCount == 0) {
+		VectorClear(visOrigin);
+		return 0;
+	}
+	else if (visCount == 8) {
+		VectorCopy(origin, visOrigin);
+		return 1;
+	}
+
+	{
+		vec3_t vz;
+
+		VectorSubtract(origin, cg.refdef.vieworg, vz);
+		VectorNormalize(vz);
+		CrossProduct(vz, axisDefault[2], vx);
+		VectorNormalize(vx);
+		CrossProduct(vz, vx, vy);
+		// NOTE: the handedness of (vx, vy, vz) is not important
+	}
+	
+	visCount = 0;
+	VectorClear(visOrigin);
+	for (i = 0; i < NUMVISSAMPLES; i++) {
+		vec3_t end;
+
+		VectorCopy(origin, end);
+		{
+			float angle;
+			float radius;
+			float x, y;
+
+			angle = (2*M_PI) * /*random()*/i / (float)NUMVISSAMPLES;
+			radius = 0.95 * lfent->lightRadius * sqrt(random());
+
+			x = radius * cos(angle);
+			y = radius * sin(angle);
+
+			VectorMA(end, x, vx, end);
+			VectorMA(end, y, vy, end);
+		}
+
+		if (!CG_IsLFVisible(origin, end, lfent->radius)) continue;
+
+		VectorAdd(visOrigin, end, visOrigin);
+		visCount++;
+	}
+
+	if (visCount > 0) {
+		_VectorScale(visOrigin, 1.0 / visCount, visOrigin);
+	}
+
+	return (float)visCount / (float)NUMVISSAMPLES;
+}
+
+/*
+=====================
+CG_SetVisibleLightSample
+=====================
+*/
+static void CG_SetVisibleLightSample(lensFlareEntity_t* lfent, float visibleLight, const vec3_t visibleOrigin) {
+	vec3_t vorg;
+
+	lfent->lib[lfent->libPos].light = visibleLight;
+	VectorCopy(visibleOrigin, vorg);
+	VectorCopy(vorg, lfent->lib[lfent->libPos].origin);
+	lfent->libPos++;
+	if (lfent->libPos >= LIGHT_INTEGRATION_BUFFER_SIZE) {
+		lfent->libPos = 0;
+	}
+	lfent->libNumEntries++;
+}
+
+/*
+=====================
+CG_GetVisibleLight
+=====================
+*/
+static float CG_GetVisibleLight(lensFlareEntity_t* lfent, vec3_t visibleOrigin) {
+	int maxLibEntries;
+	int i;
+	float visLight;
+	vec3_t visOrigin;
+	int numVisPoints;
+
+	if (lfent->lightRadius < 1) {
+		maxLibEntries = 1;
+	}
+	else if (cg.viewMovement > 1 || lfent->lock) {
+		maxLibEntries = LIGHT_INTEGRATION_BUFFER_SIZE / 2;
+	}
+	else {
+		maxLibEntries = LIGHT_INTEGRATION_BUFFER_SIZE;
+	}
+
+	if (lfent->libNumEntries > maxLibEntries) {
+		lfent->libNumEntries = maxLibEntries;
+	}
+
+	visLight = 0;
+	VectorClear(visOrigin);
+	numVisPoints = 0;
+	for (i = 1; i <= lfent->libNumEntries; i++) {
+		const lightSample_t* sample;
+
+		sample = &lfent->lib[(lfent->libPos - i) & (LIGHT_INTEGRATION_BUFFER_SIZE - 1)];
+		if (sample->light > 0) {
+			vec3_t sorg;
+
+			visLight += sample->light;
+			VectorCopy(sample->origin, sorg);
+			VectorAdd(visOrigin, sorg, visOrigin);
+			numVisPoints++;
+		}
+	}
+	if (lfent->libNumEntries > 0) visLight /= lfent->libNumEntries;
+	if (numVisPoints > 0) {
+		VectorScale(visOrigin, 1.0 / numVisPoints, visibleOrigin);
+	}
+	else {
+		VectorCopy(visOrigin, visibleOrigin);
+	}
+	return visLight;
+}
+
+/*
+=====================
+CG_AddLensFlare
+=====================
+*/
+#define SPRITE_DISTANCE 8
+void CG_AddLensFlare(lensFlareEntity_t* lfent, int quality) {
+	const lensFlareEffect_t* lfeff;
+	vec3_t origin;
+	float distanceSqr;
+	float distance;
+	vec3_t dir;
+	vec3_t angles;
+	float cosViewAngle;
+	float viewAngle;
+	float angleToLightSource;
+	vec3_t virtualOrigin;
+	vec3_t visibleOrigin;
+	float visibleLight;
+	float alpha;
+	vec3_t center;
+	int j;
+
+	lfeff = lfent->lfeff;
+	if (!lfeff) return;
+
+	CG_LFEntOrigin(lfent, origin);
+
+	distanceSqr = DistanceSquared(origin, cg.refdef.vieworg);
+	if (lfeff->range > 0 && distanceSqr >= lfeff->rangeSqr) {
+		SkipLF:
+		lfent->libNumEntries = 0;
+		return;
+	}
+	if (distanceSqr < Square(16)) goto SkipLF;
+
+	VectorSubtract(origin, cg.refdef.vieworg, dir);
+
+	distance = VectorNormalize(dir);
+	cosViewAngle = DotProduct(dir, cg.refdef.viewaxis[0]);
+	viewAngle = acos(cosViewAngle) * (180.0 / M_PI);
+	if (viewAngle >= 89.99) goto SkipLF;
+
+	// for spotlights
+	angleToLightSource = acos(-DotProduct(dir, lfent->dir)) * (180.0 / M_PI);
+	if (angleToLightSource > lfent->maxVisAngle) goto SkipLF;
+
+	if (
+		cg.numFramesWithoutViewMovement <= LIGHT_INTEGRATION_BUFFER_SIZE ||
+		lfent->lock ||
+		lfent->libNumEntries <= 0
+	) {
+		float vls;
+
+		vls = CG_ComputeVisibleLightSample(lfent, origin, distance, visibleOrigin, quality);
+		CG_SetVisibleLightSample(lfent, vls, visibleOrigin);
+	}
+
+	VectorCopy(origin, visibleOrigin);
+	visibleLight = CG_GetVisibleLight(lfent, visibleOrigin);
+	if (visibleLight <= 0) return;
+
+	VectorSubtract(visibleOrigin, cg.refdef.vieworg, dir);
+	VectorNormalize(dir);
+	vectoangles(dir, angles);
+	angles[YAW] = AngleSubtract(angles[YAW], cg.predictedPlayerState.viewangles[YAW]);
+	angles[PITCH] = AngleSubtract(angles[PITCH], cg.predictedPlayerState.viewangles[PITCH]);
+
+	VectorMA(cg.refdef.vieworg, SPRITE_DISTANCE / cosViewAngle, dir, virtualOrigin);
+	if (lfeff->range < 0) {
+		alpha = -lfeff->range / distance;
+	}
+	else {
+		alpha = 1.0 - distance / lfeff->range;
+	}
+
+	if (viewAngle > 0.5 * cg.refdef.fov_x) {
+		alpha *= 1.0 - (viewAngle - 0.5 * cg.refdef.fov_x) / (90 - 0.5 * cg.refdef.fov_x);
+	}
+
+	VectorMA(cg.refdef.vieworg, SPRITE_DISTANCE, cg.refdef.viewaxis[0], center);
+	VectorSubtract(virtualOrigin, center, dir);
+	
+	{
+		vec3_t v;
+
+		VectorRotate(dir, cg.refdef.viewaxis, v);
+		angles[ROLL] = 90.0 - atan2(v[2], v[1]) * (180.0/M_PI);
+	}
+
+	for (j = 0; j < lfeff->numLensFlares; j++) {
+		float a;
+		float vl;
+		const lensFlare_t* lf;
+
+		a = alpha;
+		vl = visibleLight;
+		lf = &lfeff->lensFlares[j];
+		if (lfent->angle >= 0) {
+			float innerAngle;
+			
+			innerAngle = lfent->angle * lf->entityAngleFactor;
+			if (angleToLightSource > innerAngle) {
+				float fadeAngle;
+
+				fadeAngle = lfeff->fadeAngle * lf->fadeAngleFactor;
+				if (fadeAngle < 0.1) continue;
+				if (angleToLightSource >= innerAngle + fadeAngle) continue;
+
+				vl *= 1.0 - (angleToLightSource - innerAngle) / fadeAngle;
+			}
+		}
+		if (lf->intensityThreshold > 0) {
+			float threshold;
+			float intensity;
+
+			threshold = lf->intensityThreshold;
+			intensity = a * vl;
+			if (intensity < threshold) continue;
+			intensity -= threshold;
+			if (lfeff->range >= 0) intensity /= 1 - threshold;
+			a = intensity / vl;
+		}
+		CG_DrawMapLensFlare(lf, distance, center, dir, angles, a, vl);
+	}
+}
+
+/*
+=====================
+CG_AddMapLensFlares
+=====================
+*/
+static void CG_AddMapLensFlares(void) {
+	int i;
+	int start, end;
+	qboolean drawSunFlares;
+	qboolean drawMapFlares;
+
+	cg.viewMovement = Distance(cg.refdef.vieworg, cg.lastViewOrigin);
+	if (cg.viewMovement > 0) {
+		cg.numFramesWithoutViewMovement = 0;
+	}
+	else {
+		cg.numFramesWithoutViewMovement++;
+	}
+
+	drawSunFlares = cg_sunFlare.integer;
+	drawMapFlares = cg_mapFlare.integer;
+
+	if (cg.clientFrame < 5) return;
+
+	start = drawSunFlares? -1 : 0;
+	end = drawMapFlares? cgs.numLensFlareEntities : 0;
+
+	for (i = start; i < end; i++) {
+		lensFlareEntity_t* lfent;
+		int quality;
+
+		if (i < 0) {
+			lfent = &cgs.sunFlare;
+			quality = cg_sunFlare.integer;
+		}
+		else {
+
+			lfent = &cgs.lensFlareEntities[i];
+			quality = cg_mapFlare.integer;
+		}
+
+		CG_AddLensFlare(lfent, quality);
+	}
+
+	VectorCopy(cg.refdef.vieworg, cg.lastViewOrigin);
+}
+
+
+//=========================================================================
 
 /*
 =================
@@ -857,6 +1260,7 @@ void CG_DrawActiveFrame( int serverTime, stereoFrame_t stereoView, qboolean demo
 		CG_AddMarks();
 		CG_AddParticles ();
 		CG_AddLocalEntities();
+		CG_AddMapLensFlares();
 	}
 	CG_AddViewWeapon( &cg.predictedPlayerState );
 
