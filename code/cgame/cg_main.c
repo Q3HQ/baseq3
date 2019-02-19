@@ -203,6 +203,7 @@ vmCvar_t	cg_teamColors;
 
 vmCvar_t	cg_deadBodyDarken;
 vmCvar_t	cg_fovAdjust;
+vmCvar_t	cg_fovGunAdjust;
 vmCvar_t	cg_followKiller;
 
 vmCvar_t	cg_bfgDlightColor;
@@ -337,6 +338,7 @@ static const cvarTable_t cvarTable[] = {
 	{ &cg_teamColors, "cg_teamColors", "", CVAR_ARCHIVE},
 	{ &cg_deadBodyDarken, "cg_deadBodyDarken", "1", CVAR_ARCHIVE},
 	{ &cg_fovAdjust, "cg_fovAdjust", "0", CVAR_ARCHIVE},
+	{ &cg_fovGunAdjust, "cg_fovGunAdjust", "0", CVAR_ARCHIVE },
 	{ &cg_followKiller, "cg_followKiller", "0", CVAR_ARCHIVE},
 	{ &cg_bfgDlightColor, "cg_bfgDlightColor", "0", CVAR_ARCHIVE},
 	{ &cg_plasmaDlightColor, "cg_plasmaDlightColor", "0", CVAR_ARCHIVE}
